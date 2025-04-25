@@ -23,8 +23,8 @@ A Python-based bot for implementing a grid trading strategy on the AsterDex cryp
 
 1.  **Clone the Repository:**
     ```bash
-    git clone <your-repository-url>
-    cd <your-repository-directory>
+    git clone https://github.com/Omnis-Labs/Strategy.git
+    cd Strategy
     ```
 
 2.  **Install Dependencies:**
