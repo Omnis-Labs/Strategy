@@ -1,4 +1,7 @@
-# AsterDex Grid Trading Bot
+# AsterDex Strategies Library
+
+<img width="729" alt="image" src="https://github.com/user-attachments/assets/080c60ca-11ed-4d1c-96b3-8df9ac0a3eeb" />
+
 
 A Python-based bot for implementing a grid trading strategy on the AsterDex cryptocurrency exchange (fapi.asterdex.com).
 
