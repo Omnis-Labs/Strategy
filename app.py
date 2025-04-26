@@ -117,14 +117,39 @@ def start_strategy_process(wallet_address, strategy_name, symbol, usdt_amount, a
 
     try:
         def run_script(script_path, env_vars):
-             os.environ.update(env_vars)
+             # --- Redirect stdout and stderr to log.txt ---
+             log_file_path = os.path.join(os.path.dirname(__file__), 'log.txt')
+             original_stdout = sys.stdout
+             original_stderr = sys.stderr
+             log_f = None
              try:
+                 # Open in append mode, create if doesn't exist
+                 log_f = open(log_file_path, 'a', encoding='utf-8')
+                 sys.stdout = log_f
+                 sys.stderr = log_f
+                 
+                 # Add a timestamp/marker for each strategy start in the log
+                 print(f"--- Starting Strategy: {script_path} at {time.strftime('%Y-%m-%d %H:%M:%S')} (PID: {os.getpid()}) ---", flush=True)
+                 
+                 # Update environment and run the script
+                 os.environ.update(env_vars)
                  import runpy
                  runpy.run_path(script_path, run_name='__main__')
+                 print(f"--- Strategy Finished: {script_path} at {time.strftime('%Y-%m-%d %H:%M:%S')} (PID: {os.getpid()}) ---", flush=True)
+                 
              except Exception as e:
-                 print(f"[ERROR] Exception in strategy process (PID {os.getpid()}) for {wallet_address}: {e}")
+                 # Log the exception to the file as well
+                 print(f"[ERROR] Exception in strategy process (PID {os.getpid()}): {e}", file=sys.stderr, flush=True)
                  import traceback
-                 traceback.print_exc()
+                 traceback.print_exc(file=sys.stderr)
+                 sys.stderr.flush() # Ensure error gets written
+             finally:
+                 # --- Restore original streams and close file ---
+                 sys.stdout = original_stdout
+                 sys.stderr = original_stderr
+                 if log_f:
+                      log_f.close()
+             # --- End Redirection ---
 
         process = multiprocessing.Process(
             target=run_script,
@@ -485,6 +510,16 @@ def get_all_statuses():
 
     return jsonify(statuses), 200
 
+@app.route('/check_user/<wallet_address>', methods=['GET'])
+def check_user_existence(wallet_address):
+    """Checks if a given wallet address is registered."""
+    print(f"Checking existence for wallet: {wallet_address[:5]}...{wallet_address[-5:]}")
+    user_keys = load_user_api_keys()
+    exists = wallet_address in user_keys
+    if exists:
+        return jsonify({"wallet_address": wallet_address, "exists": True, "message": "Wallet address is registered."}), 200
+    else:
+        return jsonify({"wallet_address": wallet_address, "exists": False, "message": "Wallet address is not registered."}), 200 # Return 200 OK even if not found, as the check itself succeeded
 
 if __name__ == '__main__':
     # Ensure data directory exists
