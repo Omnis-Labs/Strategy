@@ -6,36 +6,67 @@ import urllib.parse
 import decimal # For precise quantity calculation
 import os
 # import signal # Optional: for graceful shutdown
-# from dotenv import load_dotenv # REMOVE THIS
+from dotenv import load_dotenv # Import dotenv
 import math # For grid calculations
 import sys # For exit
 
-# load_dotenv() # REMOVE THIS
+# load_dotenv() # REMOVE THIS - Load conditionally later
 
 # --- Default Strategy Parameters (Internal) ---
 # These are used if not overridden by calculation based on USDT amount
 DEFAULT_UPPER_PRICE = decimal.Decimal("0.7")
 DEFAULT_LOWER_PRICE = decimal.Decimal("0.6")
-DEFAULT_NUM_GRIDS = 10
+DEFAULT_NUM_GRIDS = 5
 # DEFAULT_ORDER_QTY_PER_GRID = decimal.Decimal("10") # Will be calculated now
 DEFAULT_CHECK_INTERVAL_SECONDS = 60
 MIN_NOTIONAL_VALUE = decimal.Decimal("5") # Example minimum notional value (check exchange rules!)
 
-# --- Get API Keys & Core Parameters from Environment Variables ---
-API_KEY = os.environ.get("VAULT_API_KEY")
-SECRET_KEY = os.environ.get("VAULT_SECRET_KEY")
-TARGET_SYMBOL = os.environ.get("VAULT_SYMBOL") # Required
-USDT_AMOUNT_STR = os.environ.get("VAULT_USDT_AMOUNT") # Required
+# --- Determine Run Mode & Load Params ---
+API_KEY = None
+SECRET_KEY = None
+TARGET_SYMBOL = None
+USDT_AMOUNT_STR = None
+RUN_MODE = "Unknown"
 
-# --- Validate Core Parameters --- 
+# Check if run by app.py (presence of VAULT_ vars)
+if "VAULT_API_KEY" in os.environ:
+    RUN_MODE = "App-Driven"
+    print(f"[{RUN_MODE}] Reading parameters from VAULT environment variables...")
+    API_KEY = os.environ.get("VAULT_API_KEY")
+    SECRET_KEY = os.environ.get("VAULT_SECRET_KEY")
+    TARGET_SYMBOL = os.environ.get("VAULT_SYMBOL") # Required
+    USDT_AMOUNT_STR = os.environ.get("VAULT_USDT_AMOUNT") # Required
+else:
+    # Assume Standalone/Debug mode if run directly and VAULT vars missing
+    RUN_MODE = "Standalone/Debug"
+    print(f"[{RUN_MODE}] VAULT variables not found. Attempting to load from .env...")
+    # Load .env file from the project root (one level up from strategies/)
+    # Adjust the path if your .env is elsewhere
+    dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env') 
+    if os.path.exists(dotenv_path):
+        load_dotenv(dotenv_path=dotenv_path)
+        print(f"[{RUN_MODE}] Loaded .env file: {dotenv_path}")
+        # Use different names if needed, or reuse ASTER_ names like dev version
+        API_KEY = os.getenv("ASTER_API_KEY")
+        SECRET_KEY = os.getenv("ASTER_SECRET_KEY")
+        TARGET_SYMBOL = os.getenv("DEBUG_SYMBOL", "CRVUSDT") # Provide a default
+        USDT_AMOUNT_STR = os.getenv("DEBUG_USDT_AMOUNT")
+    else:
+        print(f"[{RUN_MODE} WARNING] .env file not found at {dotenv_path}. Cannot load debug parameters.")
+
+# --- Validate Core Parameters (Common logic for both modes) ---
 if not API_KEY or not SECRET_KEY:
-    print("[ERROR] VAULT_API_KEY or VAULT_SECRET_KEY not found in env vars.", file=sys.stderr)
+    print(f"[{RUN_MODE} ERROR] API_KEY or SECRET_KEY missing or not loaded.", file=sys.stderr)
     sys.exit(1)
 if not TARGET_SYMBOL:
-    print("[ERROR] VAULT_SYMBOL not found in env vars.", file=sys.stderr)
+    print(f"[{RUN_MODE} ERROR] TARGET_SYMBOL missing or not loaded.", file=sys.stderr)
     sys.exit(1)
 if not USDT_AMOUNT_STR:
-    print("[ERROR] VAULT_USDT_AMOUNT not found in env vars.", file=sys.stderr)
+    # In debug mode, prompt the user or use a default?
+    if RUN_MODE == "Standalone/Debug":
+        print(f"[{RUN_MODE} ERROR] DEBUG_USDT_AMOUNT not found in .env file.", file=sys.stderr)
+    else: # App-Driven mode
+        print(f"[{RUN_MODE} ERROR] VAULT_USDT_AMOUNT missing.", file=sys.stderr)
     sys.exit(1)
 
 try:
@@ -43,7 +74,7 @@ try:
     if USDT_AMOUNT <= 0:
         raise ValueError("USDT amount must be positive.")
 except (ValueError, decimal.InvalidOperation) as e:
-     print(f"[ERROR] Invalid VAULT_USDT_AMOUNT: {USDT_AMOUNT_STR} - {e}", file=sys.stderr)
+     print(f"[{RUN_MODE} ERROR] Invalid USDT_AMOUNT: {USDT_AMOUNT_STR} - {e}", file=sys.stderr)
      sys.exit(1)
 
 # --- Constants & Precision (Keep as before, maybe fetch dynamically later) ---
@@ -384,7 +415,9 @@ if __name__ == "__main__":
                 time.sleep(check_interval)
                 continue
 
-            print(f"Current Market Price: {current_price:.{PRICE_PRECISION.normalize().scale}f}") # Format price
+            # Calculate the number of decimal places from PRICE_PRECISION
+            num_decimal_places = abs(PRICE_PRECISION.as_tuple().exponent) 
+            print(f"Current Market Price: {current_price:.{num_decimal_places}f}") # Format price
 
             open_orders_list = get_open_orders(TARGET_SYMBOL)
             open_order_prices = {

@@ -7,6 +7,7 @@ import decimal
 import os
 # import signal
 import sys
+from dotenv import load_dotenv # Import dotenv
 
 # --- Default Strategy Parameters (Internal) ---
 DEFAULT_ITERATIONS = 5
@@ -16,28 +17,76 @@ DEFAULT_MAX_POLL_ATTEMPTS = 20
 # ORDER_QUANTITY will be calculated based on USDT amount
 MIN_NOTIONAL_VALUE = decimal.Decimal("5") # Example minimum
 
-# --- Get API Keys & Core Parameters from Environment Variables ---
-API_KEY = os.environ.get("VAULT_API_KEY")
-SECRET_KEY = os.environ.get("VAULT_SECRET_KEY")
-TARGET_SYMBOL = os.environ.get("VAULT_SYMBOL")
-USDT_AMOUNT_STR = os.environ.get("VAULT_USDT_AMOUNT")
-# Optional: Allow overriding iterations via env var?
-ITERATIONS_STR = os.environ.get("VAULT_ITERATIONS") # Keep default if not provided
+# --- Determine Run Mode & Load Params ---
+API_KEY = None
+SECRET_KEY = None
+TARGET_SYMBOL = None
+USDT_AMOUNT_STR = None
+ITERATIONS_STR = None # Add this for iterations
+RUN_MODE = "Unknown"
+
+# Check if run by app.py (presence of VAULT_ vars)
+if "VAULT_API_KEY" in os.environ:
+    RUN_MODE = "App-Driven"
+    print(f"[{RUN_MODE}] Reading parameters from VAULT environment variables...")
+    API_KEY = os.environ.get("VAULT_API_KEY")
+    SECRET_KEY = os.environ.get("VAULT_SECRET_KEY")
+    TARGET_SYMBOL = os.environ.get("VAULT_SYMBOL") # Required
+    USDT_AMOUNT_STR = os.environ.get("VAULT_USDT_AMOUNT") # Required
+    ITERATIONS_STR = os.environ.get("VAULT_ITERATIONS") # Optional from Vault
+else:
+    # Assume Standalone/Debug mode
+    RUN_MODE = "Standalone/Debug"
+    print(f"[{RUN_MODE}] VAULT variables not found. Attempting to load from .env...")
+    dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    if os.path.exists(dotenv_path):
+        load_dotenv(dotenv_path=dotenv_path)
+        print(f"[{RUN_MODE}] Loaded .env file: {dotenv_path}")
+        API_KEY = os.getenv("ASTER_API_KEY")
+        SECRET_KEY = os.getenv("ASTER_SECRET_KEY")
+        TARGET_SYMBOL = os.getenv("DEBUG_SYMBOL", "CRVUSDT")
+        USDT_AMOUNT_STR = os.getenv("DEBUG_USDT_AMOUNT")
+        ITERATIONS_STR = os.getenv("DEBUG_ITERATIONS") # Optional from .env for debug
+    else:
+        print(f"[{RUN_MODE} WARNING] .env file not found at {dotenv_path}. Cannot load debug parameters.")
 
 # --- Validate Core Parameters ---
-if not API_KEY or not SECRET_KEY: print("[ERROR] Keys missing.", file=sys.stderr); sys.exit(1)
-if not TARGET_SYMBOL: print("[ERROR] Symbol missing.", file=sys.stderr); sys.exit(1)
-if not USDT_AMOUNT_STR: print("[ERROR] USDT Amount missing.", file=sys.stderr); sys.exit(1)
+if not API_KEY or not SECRET_KEY:
+    print(f"[{RUN_MODE} ERROR] API_KEY or SECRET_KEY missing.", file=sys.stderr); sys.exit(1)
+if not TARGET_SYMBOL:
+    print(f"[{RUN_MODE} ERROR] TARGET_SYMBOL missing.", file=sys.stderr); sys.exit(1)
+if not USDT_AMOUNT_STR:
+    if RUN_MODE == "Standalone/Debug":
+        print(f"[{RUN_MODE} ERROR] DEBUG_USDT_AMOUNT not found in .env.", file=sys.stderr)
+    else: # App-Driven
+        print(f"[{RUN_MODE} ERROR] VAULT_USDT_AMOUNT missing.", file=sys.stderr)
+    sys.exit(1)
+
 try:
     USDT_AMOUNT = decimal.Decimal(USDT_AMOUNT_STR)
     if USDT_AMOUNT <= 0: raise ValueError("USDT amount must be positive.")
-except Exception as e: print(f"[ERROR] Invalid USDT Amount: {e}", file=sys.stderr); sys.exit(1)
+except Exception as e: print(f"[{RUN_MODE} ERROR] Invalid USDT Amount: {e}", file=sys.stderr); sys.exit(1)
 
-ITERATIONS = DEFAULT_ITERATIONS
-if ITERATIONS_STR:
-    try: ITERATIONS = int(ITERATIONS_STR); 
-        if ITERATIONS < 1: raise ValueError()
-    except ValueError: print(f"[WARN] Invalid VAULT_ITERATIONS '{ITERATIONS_STR}', using default {DEFAULT_ITERATIONS}.")
+# Process iterations based on the new logic
+ITERATIONS = None  # Default to None (infinite) before checking mode-specific vars
+iterations_source_var = None
+
+if RUN_MODE == "App-Driven":
+    iterations_source_var = "VAULT_ITERATIONS"
+elif RUN_MODE == "Standalone/Debug":
+    iterations_source_var = "DEBUG_ITERATIONS"
+
+if iterations_source_var and ITERATIONS_STR: # Check if the specific var for this mode was set
+    try:
+        parsed_iterations = int(ITERATIONS_STR)
+        if parsed_iterations < 1:
+            raise ValueError("Iterations must be at least 1")
+        ITERATIONS = parsed_iterations # Set to finite number if valid
+    except ValueError as e:
+        # Use specific variable name in warning based on mode
+        print(f"[{RUN_MODE} WARN] Invalid {iterations_source_var} '{ITERATIONS_STR}' ({e}). Falling back to {DEFAULT_ITERATIONS} iterations.")
+        ITERATIONS = DEFAULT_ITERATIONS # Fallback to default 5 as safety
+# If the mode-specific variable was NOT set (ITERATIONS_STR is None), ITERATIONS remains None (infinite)
 
 # Use other internal defaults
 DELAY_SECONDS = DEFAULT_DELAY_SECONDS
@@ -73,8 +122,10 @@ def make_signed_request(method, endpoint, params=None):
         elif method.upper()=='DELETE': r=requests.delete(url,headers=hdrs)
         else: print(f"Unsupported method: {method}", file=sys.stderr); return None
         r.raise_for_status(); return r.json()
-    except Exception as e: print(f"API Error {method} {endpoint}: {e}", file=sys.stderr);
-        if hasattr(e, 'response') and e.response is not None: print(f" Resp: {e.response.text}", file=sys.stderr);
+    except Exception as e:
+        print(f"API Error {method} {endpoint}: {e}", file=sys.stderr)
+        if hasattr(e, 'response') and e.response is not None:
+             print(f" Resp: {e.response.text}", file=sys.stderr)
         return None
 def get_current_price(symbol):
     # Public endpoint, no signing needed
@@ -131,8 +182,14 @@ if __name__ == "__main__":
     print(f"Using Precisions: Qty={QUANTITY_PRECISION}")
 
     # --- Main Loop --- 
-    for i in range(ITERATIONS):
-        print(f"--- Cycle {i+1}/{ITERATIONS} --- commencing --- ")
+    current_cycle = 0
+    while True:
+        current_cycle += 1
+        cycle_str = f"{current_cycle}"
+        if ITERATIONS is not None:
+            cycle_str += f"/{ITERATIONS}"
+        print(f"--- Cycle {cycle_str} --- commencing --- ")
+
         buy_filled, sell_filled = False, False
         buy_oid, sell_oid = None, None
 
@@ -180,7 +237,14 @@ if __name__ == "__main__":
             else: print(f"[ERROR] Failed to place SELL order: {sell_res}", file=sys.stderr)
         # --- End Cycle --- 
         state = "successfully" if buy_filled and sell_filled else "with errors"
-        print(f"--- Cycle {i+1}/{ITERATIONS} completed {state}. Waiting {DELAY_SECONDS}s --- ")
+
+        # Check if we need to stop (if iterations are finite)
+        if ITERATIONS is not None and current_cycle >= ITERATIONS:
+            print(f"--- Reached target {ITERATIONS} iterations. Finishing. ---")
+            break # Exit the while loop
+
+        # Otherwise, wait for the next cycle
+        print(f"--- Cycle {cycle_str} completed {state}. Waiting {DELAY_SECONDS}s --- ")
         time.sleep(DELAY_SECONDS)
     # End main loop
     print("Strategy finished.") 

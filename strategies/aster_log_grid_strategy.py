@@ -6,34 +6,71 @@ import urllib.parse
 import decimal # For precise quantity calculation
 import os
 # import signal # Optional: for graceful shutdown
-# from dotenv import load_dotenv # REMOVE THIS
+from dotenv import load_dotenv # Import dotenv
 import math # For grid calculations
 import sys
 
-# load_dotenv() # REMOVE THIS
+# load_dotenv() # REMOVE THIS - Load conditionally later
 
 # --- Default Strategy Parameters (Internal) ---
 DEFAULT_UPPER_PRICE = decimal.Decimal("0.7")
 DEFAULT_LOWER_PRICE = decimal.Decimal("0.6")
-DEFAULT_NUM_GRIDS = 10
+DEFAULT_NUM_GRIDS = 5
 # DEFAULT_ORDER_QTY_PER_GRID = decimal.Decimal("10") # Calculated
 DEFAULT_CHECK_INTERVAL_SECONDS = 60
 MIN_NOTIONAL_VALUE = decimal.Decimal("5") # Example minimum
 
-# --- Get API Keys & Core Parameters from Environment Variables ---
-API_KEY = os.environ.get("VAULT_API_KEY")
-SECRET_KEY = os.environ.get("VAULT_SECRET_KEY")
-TARGET_SYMBOL = os.environ.get("VAULT_SYMBOL")
-USDT_AMOUNT_STR = os.environ.get("VAULT_USDT_AMOUNT")
+# --- Determine Run Mode & Load Params ---
+API_KEY = None
+SECRET_KEY = None
+TARGET_SYMBOL = None
+USDT_AMOUNT_STR = None
+RUN_MODE = "Unknown"
 
-# --- Validate Core Parameters --- 
-if not API_KEY or not SECRET_KEY: print("[ERROR] Keys missing.", file=sys.stderr); sys.exit(1)
-if not TARGET_SYMBOL: print("[ERROR] Symbol missing.", file=sys.stderr); sys.exit(1)
-if not USDT_AMOUNT_STR: print("[ERROR] USDT Amount missing.", file=sys.stderr); sys.exit(1)
+# Check if run by app.py (presence of VAULT_ vars)
+if "VAULT_API_KEY" in os.environ:
+    RUN_MODE = "App-Driven"
+    print(f"[{RUN_MODE}] Reading parameters from VAULT environment variables...")
+    API_KEY = os.environ.get("VAULT_API_KEY")
+    SECRET_KEY = os.environ.get("VAULT_SECRET_KEY")
+    TARGET_SYMBOL = os.environ.get("VAULT_SYMBOL") # Required
+    USDT_AMOUNT_STR = os.environ.get("VAULT_USDT_AMOUNT") # Required
+else:
+    # Assume Standalone/Debug mode if run directly and VAULT vars missing
+    RUN_MODE = "Standalone/Debug"
+    print(f"[{RUN_MODE}] VAULT variables not found. Attempting to load from .env...")
+    dotenv_path = os.path.join(os.path.dirname(__file__), '..', '.env')
+    if os.path.exists(dotenv_path):
+        load_dotenv(dotenv_path=dotenv_path)
+        print(f"[{RUN_MODE}] Loaded .env file: {dotenv_path}")
+        API_KEY = os.getenv("ASTER_API_KEY")
+        SECRET_KEY = os.getenv("ASTER_SECRET_KEY")
+        TARGET_SYMBOL = os.getenv("DEBUG_SYMBOL", "CRVUSDT") # Provide a default
+        USDT_AMOUNT_STR = os.getenv("DEBUG_USDT_AMOUNT")
+    else:
+        print(f"[{RUN_MODE} WARNING] .env file not found at {dotenv_path}. Cannot load debug parameters.")
+
+# --- Validate Core Parameters (Common logic for both modes) ---
+if not API_KEY or not SECRET_KEY:
+    print(f"[{RUN_MODE} ERROR] API_KEY or SECRET_KEY missing or not loaded.", file=sys.stderr)
+    sys.exit(1)
+if not TARGET_SYMBOL:
+    print(f"[{RUN_MODE} ERROR] TARGET_SYMBOL missing or not loaded.", file=sys.stderr)
+    sys.exit(1)
+if not USDT_AMOUNT_STR:
+    if RUN_MODE == "Standalone/Debug":
+        print(f"[{RUN_MODE} ERROR] DEBUG_USDT_AMOUNT not found in .env file.", file=sys.stderr)
+    else: # App-Driven mode
+        print(f"[{RUN_MODE} ERROR] VAULT_USDT_AMOUNT missing.", file=sys.stderr)
+    sys.exit(1)
+
 try:
     USDT_AMOUNT = decimal.Decimal(USDT_AMOUNT_STR)
-    if USDT_AMOUNT <= 0: raise ValueError("USDT amount must be positive.")
-except Exception as e: print(f"[ERROR] Invalid USDT Amount: {e}", file=sys.stderr); sys.exit(1)
+    if USDT_AMOUNT <= 0:
+        raise ValueError("USDT amount must be positive.")
+except (ValueError, decimal.InvalidOperation) as e:
+     print(f"[{RUN_MODE} ERROR] Invalid USDT_AMOUNT: {USDT_AMOUNT_STR} - {e}", file=sys.stderr)
+     sys.exit(1)
 
 # --- Constants & Precision --- 
 BASE_URL = "https://fapi.asterdex.com"
@@ -153,11 +190,15 @@ def calculate_grid_levels(upper_price, lower_price, num_grids):
         ratio = (upper_price / lower_price) ** (decimal.Decimal(1) / decimal.Decimal(str(num_grids)))
         if ratio <= 1: print(f"[ERROR] Grid ratio <= 1 ({ratio}).", file=sys.stderr); return []
         lvls = []; cur = lower_price
-        for i in range(num_grids + 1): lvls.append(cur); 
-            if i < num_grids: cur *= ratio
+        for i in range(num_grids + 1):
+            lvls.append(cur)
+            if i < num_grids:
+                cur *= ratio
     except Exception as e: print(f"[ERROR] Log grid calc: {e}", file=sys.stderr); return []
-    try: fmt_lvls = [lvl.quantize(PRICE_PRECISION, decimal.ROUND_DOWN) for lvl in lvls]
-    except Exception as e: print(f"[ERROR] Log grid quantize: {e}", file=sys.stderr); return []
+    try:
+        fmt_lvls = [lvl.quantize(PRICE_PRECISION, decimal.ROUND_DOWN) for lvl in lvls]
+    except Exception as e:
+        print(f"[ERROR] Log grid quantize: {e}", file=sys.stderr); return []
     unique = []; tol = PRICE_PRECISION / 2
     temp_sorted = sorted(list(set(fmt_lvls)), reverse=True)
     if temp_sorted:
@@ -226,7 +267,11 @@ if __name__ == "__main__":
             current_price = get_current_price(TARGET_SYMBOL)
             if current_price is None: print("Failed price..."); time.sleep(check_interval); continue
             if not isinstance(current_price, decimal.Decimal): print("Price not Dec..."); time.sleep(check_interval); continue
-            print(f"Price: {current_price:.{PRICE_PRECISION.normalize().scale}f}")
+            
+            # Calculate the number of decimal places from PRICE_PRECISION
+            num_decimal_places = abs(PRICE_PRECISION.as_tuple().exponent)
+            print(f"Price: {current_price:.{num_decimal_places}f}")
+            
             open_orders = get_open_orders(TARGET_SYMBOL)
             open_buys = set(); open_sells = set()
             if isinstance(open_orders, list):
