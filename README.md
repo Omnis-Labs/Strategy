@@ -1,71 +1,107 @@
-# AsterDex Strategies Library
+# Omnis Strategy Library
 
 <img width="729" alt="image" src="https://github.com/user-attachments/assets/080c60ca-11ed-4d1c-96b3-8df9ac0a3eeb" />
+<p align="center">Visit the <a href="https://omnis-interface.vercel.app" target="_blank">demo site</a></p>
+<p align="center">Read the <a href="https://omnis-labs.gitbook.io/v1" target="_blank">documentation</a></p>
+<br />
 
+**Omnis Strategy Library** provides battle-tested DeFi strategy implementations, optimized for on-chain deployment and off-chain execution environments (will move to on-chain in the future).
+The current repository focuses on **AsterDex Futures strategies** — enabling scalable, automated trading across perpetual markets using structured grid systems.
 
-A Python-based bot for implementing a grid trading strategy on the AsterDex cryptocurrency exchange (fapi.asterdex.com).
+---
 
-**Disclaimer:** Trading cryptocurrencies involves significant risk. This software is provided for educational purposes and as a technical example. Use it at your own risk. The author is not responsible for any financial losses.
+## ✨ Strategies Included
 
-## Features
+- 🟢 **Aster Points Maximizer** — Rapid trading loops to optimize Aster reward point accumulation.
+- 📈 **Normal Grid Strategy** — Equal-spaced grids for sideways or range-bound markets.
+- 📈 **Logarithmic Grid Strategy** — Exponentially spaced grids to capture wide, volatile market movements.
 
-*   Connects to the AsterDex Futures API.
-*   Implements a logarithmic grid trading strategy.
-*   Places buy and sell limit orders based on calculated grid levels.
-*   Periodically checks and maintains the grid orders.
+Each strategy is engineered to be modular, transparent, and compatible with secure API key setups.
 
-## Prerequisites
+---
 
-*   Python 3.7+
-*   pip
+## 🛠️ Tech Stack
 
-## Setup
+| Layer       | Tools Used                                |
+| ----------- | ----------------------------------------- |
+| Core Engine | Python 3.7+, Decimal Precision, Requests  |
+| Secrets     | dotenv for environment-based API security |
+| Exchange    | AsterDex Futures API                      |
 
-1.  **Clone the Repository:**
-    ```bash
-    git clone https://github.com/Omnis-Labs/Strategy.git
-    cd Strategy
-    ```
+---
 
-2.  **Install Dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
+## 🚀 Getting Started
 
-3.  **Configure Environment Variables:**
-    *   Create a file named `.env` in the project's root directory.
-    *   Add your AsterDex API key and secret key to the `.env` file like this:
-        ```dotenv
-        ASTER_API_KEY="YOUR_API_KEY_HERE"
-        ASTER_SECRET_KEY="YOUR_SECRET_KEY_HERE"
-        ```
-    *   **Important:** Ensure the `.env` file is included in your `.gitignore` to prevent accidentally committing your keys.
+### 1. Clone the Repository
 
-## Configuration
+```bash
+git clone https://github.com/Omnis-Labs/Strategy.git
+cd Strategy
+```
 
-Strategy parameters are set directly within the main script (`aster_log_grid_strategy.py`):
+### 2. Install Dependencies
 
-*   `TARGET_SYMBOL`: The trading pair (e.g., "CRVUSDT").
-*   `UPPER_PRICE`: The upper bound of the grid.
-*   `LOWER_PRICE`: The lower bound of the grid.
-*   `NUM_GRIDS`: The number of grid intervals.
-*   `ORDER_QTY_PER_GRID`: The quantity for each buy/sell order.
-*   `CHECK_INTERVAL_SECONDS`: How often the bot checks and updates orders.
+```bash
+pip install -r requirements.txt
+```
 
-Adjust these parameters according to your trading strategy and risk tolerance.
+### 3. Configure Environment Variables
 
-## Usage
+Create a `.env` file in the root directory:
 
-Run the main strategy script:
+```dotenv
+ASTER_API_KEY="YOUR_API_KEY_HERE"
+ASTER_SECRET_KEY="YOUR_SECRET_KEY_HERE"
+```
+
+🔒 Make sure your `.env` is excluded from version control (`.gitignore`).
+
+---
+
+## ⚙️ Strategy Configuration
+
+Each strategy script (e.g., `aster_log_grid_strategy.py`) allows simple parameter customization:
+
+| Parameter             | Description                                   |
+| ---------------------- | --------------------------------------------- |
+| `TARGET_SYMBOL`        | Trading pair symbol (e.g., `CRVUSDT`)         |
+| `UPPER_PRICE` & `LOWER_PRICE` | Price boundaries for grid placement    |
+| `NUM_GRIDS`            | Number of grid levels                        |
+| `ORDER_QTY_PER_GRID`   | Quantity allocated per order                 |
+| `CHECK_INTERVAL_SECONDS` | How often the system checks and updates     |
+
+Adjust these according to your risk appetite and market expectations.
+
+---
+
+## 🧠 Usage
+
+To launch a strategy:
 
 ```bash
 python aster_log_grid_strategy.py
 ```
 
-The bot will initialize, calculate grid levels, and start placing/maintaining orders based on the current market price and your configuration. Monitor the output for status updates and potential errors.
+The system will:
+- Initialize secure API connections
+- Calculate optimal grid levels
+- Place and maintain dynamic buy/sell orders based on real-time market data
 
-## License
+Logs will provide clear updates on status, fills, and error handling.
 
-This work is licensed under the Creative Commons Attribution-NonCommercial-NoDerivatives 4.0 International License. To view a copy of this license, visit <http://creativecommons.org/licenses/by-nc-nd/4.0/> or send a letter to Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
+---
 
-[![CC BY-NC-ND 4.0](https://licensebuttons.net/l/by-nc-nd/4.0/88x31.png)](http://creativecommons.org/licenses/by-nc-nd/4.0/) 
+## 📝 License
+
+This project is licensed under the **Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)** license.
+
+You are free to:
+- **Share** — copy and redistribute the material in any medium or format
+- **Adapt** — remix, transform, and build upon the material
+
+Under the following terms:
+- **Attribution** — You must give appropriate credit.
+- **NonCommercial** — You may not use the material for commercial purposes.
+- **ShareAlike** — If you remix, transform, or build upon the material, you must distribute your contributions under the same license.
+
+🔗 [Read the full license here](https://creativecommons.org/licenses/by-nc-sa/4.0/)
